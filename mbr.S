@@ -22,6 +22,17 @@
 #define DIRENT_SIZE					4
 #define DIRENT_NAME					8
 
+#define ELF_ENTRY_VADDR					0x18
+#define ELF_PROG_HEADER_TABLE_ENTRIES	0x2C
+
+#define ELF_PROG_HEADER_SIZE			0x28
+#define ELF_PROG_HEADER_TABLE			0x34
+
+#define ELF_PROG_SECTION_SEGTYPE		0x00
+#define ELF_PROG_SECTION_FILEOFFSET		0x04
+#define ELF_PROG_SECTION_VADDR			0x08
+#define ELF_PROG_SECTION_FSIZE			0x10
+
 #define GDT_ENTRY(base, limit, access, flags) \
 	(limit			& 0xFFFF)	<< 0	| \
 	(base			& 0xFFFFFF)	<< 16	| \
@@ -132,7 +143,6 @@ find_name_loop:
 
 	push %ax							# save dirent->d_inode
 
-	movw $0x2000, read_params_location 	# read inode table to safe place(0x7c00 + max block size)
 	pop %bx
 	call load_inode						# load dirent->d_inode info
 
@@ -140,6 +150,7 @@ find_name_loop:
 	# 		this code may cause some problems in near future.
 	# 			ax -> blocks
 	# 			bx -> ptr to block
+	movw $0x2000, read_params_location 	# read file to safe place(0x7c00 + max block size)
 	movw (%bx), %dx
 	movw %ax, %bx
 	movw %dx, %ax
@@ -215,7 +226,7 @@ blk_to_sector:
 
 
 err:
-	movw $0x0f00 + 'k', %gs:0
+	movw $0x0f00 + 'E', %gs:0
 	jmp .
 
 .code32
@@ -225,8 +236,47 @@ pm_entry:
 	movl %eax, %es
 	movl %eax, %fs
 	movl %eax, %ds
+	movl %eax, %ss
+	movl $0x7a00, %esp
 
+load_elf:
+	movl $0x9c00, %ebx
+	xor %ecx, %ecx
+	movw ELF_PROG_HEADER_TABLE_ENTRIES(%ebx), %cx
+	addl $ELF_PROG_HEADER_TABLE, %ebx
+
+load_elf_loop:
+	dec %ecx
+	movl %ecx, %eax
+	pushl %ecx
+
+	imul $ELF_PROG_HEADER_SIZE, %eax
+	movl ELF_PROG_SECTION_SEGTYPE(%ebx, %eax), %edx
+	cmpl $1, %edx
+	jnz load_elf_loop	# skip this segment if SEGTYPE isn't PT_LOAD
+
+	movl ELF_PROG_SECTION_VADDR(%ebx, %eax), %edi		# section VADDR
+	movl ELF_PROG_SECTION_FILEOFFSET(%ebx, %eax), %esi  # data offset in ELF file
+	addl $0x9c00, %esi									# ELF offset in memory
+
+	movl ELF_PROG_SECTION_FSIZE(%ebx, %eax), %ecx		# section size in bytes
+	rep movsb											# load section to its VADDR
+
+	popl %ecx
+	cmpl $0, %ecx
+	jnz load_elf_loop
+
+jmpkernel:
+	movl ELF_ENTRY_VADDR+0x9c00, %ebx
+	jmp  *%ebx
+
+err32:
+	movb %cl, %al
+	addb $'0', %al
+	movb $0x0f, %ah
+	movw %ax, 0xb8004
 	cli; hlt
+
 
 .org 0x1b8 - (data_end-data_start)
 
