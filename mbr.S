@@ -199,7 +199,6 @@ load_inode:
 # bx - count
 read_blocks:
 	call blk_to_sector
-	movw %ax, read_params_lba_start
 	movw %bx, read_params_sectors
 
 	push 	%dx
@@ -214,11 +213,12 @@ read_blocks:
 
 blk_to_sector:
 	push %bx
-	movw part_start_lba, %bx	# read partition offset
+	movl part_start_lba, %ebx	# read partition offset
+	movl %ebx, read_params_lba_start
 
 	movb log_blksz, %cl
-	shlw %cl, %ax				# fs blocks -> disk sectors
-	addw %bx, %ax				# apply partition offset to fs block offset
+	shlw %cl, %ax						# fs blocks -> disk sectors
+	addl %eax, read_params_lba_start	# apply partition offset to fs block offset
 
 	pop %bx
 	shlw %cl, %bx				# fs blocks -> disk sectors
@@ -226,7 +226,6 @@ blk_to_sector:
 
 
 err:
-	movw $0x0f00 + 'E', %gs:0
 	jmp .
 
 .code32
@@ -270,21 +269,11 @@ jmpkernel:
 	movl ELF_ENTRY_VADDR+0x9c00, %ebx
 	jmp  *%ebx
 
-err32:
-	movb %cl, %al
-	addb $'0', %al
-	movb $0x0f, %ah
-	movw %ax, 0xb8004
-	cli; hlt
-
-
-.org 0x1b8 - (data_end-data_start)
-
+data_start:
 gdtr:
-	.short gdt_end-gdt-1
-	.long  gdt+0x7a00
-gdt:
-	.quad 0
+	.short gdt_end-gdtr-1
+	.long  gdtr+0x7a00
+	.word 0
 	.quad GDT_ENTRY_CS(0x000000, 0xFFFFFFFF)
 	.quad GDT_ENTRY_DS(0x000000, 0xFFFFFFFF)
 gdt_end:
@@ -293,7 +282,6 @@ fname:
 .ascii "k46"
 _fname_e:
 
-data_start:
 # s_log_block_size + 1
 log_blksz: .byte 1
 
@@ -310,9 +298,9 @@ read_params_lba_start:
 	.long 0
 data_end:
 
-.org = 0x1B8
+.org 0x1b8
 	.ascii "COCK"
-	.word 0x0000
+	.word 0xFAFA
 	#part1
 	.byte 0b01000000
 
