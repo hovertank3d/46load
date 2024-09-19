@@ -49,8 +49,6 @@
 
 start:
 	# init segments and stack pointer
-	movw $0xb800, 	%ax
-	movw %ax, 		%gs
 	movw $0x07a0, 	%ax
 	movw %ax, 		%ds
 	movw %ax, 		%es
@@ -88,6 +86,8 @@ check_a20:
 
 	pop %es
 	pop %ds
+
+	movb %dl, dri
 
 load_file:
 	movw $1, 	%ax
@@ -204,7 +204,7 @@ read_blocks:
 	push 	%dx
 	movw 	$read_params,	%si
 	movb 	$0x42,			%ah
-	movb 	$0x80,			%dl
+	movb 	dri,			%dl
 	int		$0x13
 	jc 		err
 
@@ -225,16 +225,13 @@ blk_to_sector:
 	ret
 
 
-err:
-	jmp .
+err: jmp .
 
 .code32
 pm_entry:
 	movl $0x10, %eax
 	movl %eax, %ds
 	movl %eax, %es
-	movl %eax, %fs
-	movl %eax, %ds
 	movl %eax, %ss
 	movl $0x7a00, %esp
 
@@ -270,6 +267,7 @@ jmpkernel:
 	jmp  *%ebx
 
 data_start:
+dri: .byte 0
 gdtr:
 	.short gdt_end-gdtr-1
 	.long  gdtr+0x7a00
